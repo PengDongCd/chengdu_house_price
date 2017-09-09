@@ -1,15 +1,19 @@
 # -*- coding:utf-8 -*-
+from config import *
 import re
 import pymysql
 import requests
 from bs4 import BeautifulSoup
 from requests.exceptions import RequestException
 
+
+URL = BJ_URL
+
 db = pymysql.connect(host="localhost",user="testuser01",password="test123",db="chengdu_house_price", charset='utf8mb4')
 cursor = db.cursor()
 
 def get_district_list():
-    url = "http://newhouse.cd.fang.com/house/s/"
+    url = URL + "/house/s/"
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -35,7 +39,7 @@ def get_district_list():
 
 
 def get_block_list(district):
-    url = "http://newhouse.cd.fang.com" + district['link']
+    url = URL + district['link']
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -61,7 +65,7 @@ def get_block_list(district):
 
 
 def get_house_list_of_block(block):
-    url = "http://newhouse.cd.fang.com" + block['link']
+    url = URL + block['link']
     headers = {
         "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_11_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/60.0.3112.113 Safari/537.36",
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
@@ -78,42 +82,61 @@ def get_house_list_of_block(block):
             total_count = int(digit_pattern.search(total_count_text).group())
             if total_count == 0:
                 yield None
-            house_list = soup.select('div#newhouse_loupai_list ul li div div.nlc_details')
-            for house in house_list:
-                key_pattern = re.compile(r'(?<=//).+(?=\.fang)')
-                house_key = key_pattern.search(house.select_one('div.nlcd_name a')['href']).group()
-                try:
-                    house_name = house.select_one('div.nlcd_name a').get_text().encode(response.encoding).decode(
-                        requests.utils.get_encodings_from_content(html)[0]).strip()
-                except:
-                    house_name = "生僻字，名字获取失败！"
-                try:
-                    house_address = house.select_one('div.address a')['title'].encode(response.encoding).decode(
-                        requests.utils.get_encodings_from_content(html)[0])
-                    patter_loc = re.compile(r'(?<=\[).+(?=\])')
-                    if patter_loc.search(house_address):
-                        location = patter_loc.search(house_address).group()
-                    else:
-                        location = '-'
-                except:
-                    house_address = "生僻字，地址获取失败！"
-                if house.select_one('div.nhouse_price span'):
-                    house_price_text = house.select_one('div.nhouse_price span').get_text().encode(response.encoding).decode(requests.utils.get_encodings_from_content(html)[0])
-                    if house_price_text == '价格待定':
-                        house_price = -1
-                    else:
-                        house_price = int(digit_pattern.search(house_price_text).group())
-                    yield {
-                        'house_key': house_key,
-                        'name': house_name,
-                        'address': house_address,
-                        'price': house_price,
-                        'district_name': block['district_name'],
-                        'block_name': block['block_name'],
-                        'location': location
-                    }
+            else:
+                if total_count > 20:
+                    house_list = soup.select('div#newhouse_loupai_list ul li div div.nlc_details')
+                    page_count = (total_count / 20) + 1
+                    page_range = range(2, page_count)
+                    for page_index in page_range:
+                        url_page = url + '/b9%d' % page_index
+                        response = requests.get(url_page, headers=headers)
+                        if response.status_code == 200:
+                            html = response.text
+                            soup_page = BeautifulSoup(html, 'lxml')
+                            house_list += soup_page.select('div#newhouse_loupai_list ul li div div.nlc_details')
+                        else:
+                            print("Got page %d data failed! " % page_index)
                 else:
-                    yield None
+                        house_list = soup.select('div#newhouse_loupai_list ul li div div.nlc_details')
+                for house in house_list:
+                    key_pattern = re.compile(r'(?<=http://)\w+(?=\.fang)')
+                    house_key = key_pattern.search(house.select_one('div.nlcd_name a')['href']).group()
+                    try:
+                        house_name = house.select_one('div.nlcd_name a').get_text().encode(response.encoding).decode(
+                            requests.utils.get_encodings_from_content(html)[0]).strip()
+                    except:
+                        house_name = "生僻字，名字获取失败！"
+                    try:
+                        house_address = house.select_one('div.address a')['title'].encode(response.encoding).decode(
+                            requests.utils.get_encodings_from_content(html)[0])
+                        patter_loc = re.compile(r'(?<=\[).+(?=\])')
+                        if patter_loc.search(house_address):
+                            location = patter_loc.search(house_address).group()
+                        else:
+                            location = '-'
+                    except:
+                        house_address = "生僻字，地址获取失败！"
+                    if house.select_one('div.nhouse_price span'):
+                        house_price_text = house.select_one('div.nhouse_price span').get_text().encode(response.encoding).decode(requests.utils.get_encodings_from_content(html)[0])
+                        if house_price_text == '价格待定':
+                            house_price = 0
+                        else:
+                            house_price_unit_text = house.select_one('div.nhouse_price em').get_text()
+                            if house_price_unit_text == 'ÍòÔª/Ì×Æð':
+                                house_price = -int(digit_pattern.search(house_price_text).group())
+                            else:
+                                house_price = int(digit_pattern.search(house_price_text).group())
+                        yield {
+                            'house_key': house_key,
+                            'name': house_name,
+                            'address': house_address,
+                            'price': house_price,
+                            'district_name': block['district_name'],
+                            'block_name': block['block_name'],
+                            'location': location
+                        }
+                    else:
+                        yield None
         else:
             print("Can't got 200 when request URL")
     except RequestException:
@@ -160,7 +183,8 @@ def main():
                     if block:
                         for house in get_house_list_of_block(block):
                             if house:
-                                store_house_price_data_in_db(house)
+                                print(house)
+                                # store_house_price_data_in_db(house)
             else:
                 print("This distric is empty!")
     finally:

@@ -9,7 +9,7 @@ from requests.exceptions import RequestException
 
 URL = BJ_URL
 
-db = pymysql.connect(host="localhost",user="testuser01",password="test123",db="chengdu_house_price", charset='utf8mb4')
+db = pymysql.connect(host="localhost",user="testuser01",password="test123",db="house_price", charset='utf8mb4')
 cursor = db.cursor()
 
 def get_district_list():
@@ -85,7 +85,7 @@ def get_house_list_of_block(block):
             else:
                 if total_count > 20:
                     house_list = soup.select('div#newhouse_loupai_list ul li div div.nlc_details')
-                    page_count = (total_count / 20) + 1
+                    page_count = (total_count // 20) + 1
                     page_range = range(2, page_count)
                     for page_index in page_range:
                         url_page = url + '/b9%d' % page_index
@@ -145,7 +145,7 @@ def get_house_list_of_block(block):
 
 
 def store_house_price_data_in_db(house):
-    sel_sql = "SELECT * FROM new_house_price \
+    sel_sql = "SELECT * FROM bj_new_house_price \
        WHERE house_key =  \"%s\"" % (house['house_key'])
     try:
         # 执行sql语句
@@ -156,7 +156,7 @@ def store_house_price_data_in_db(house):
         print("Failed to fetch data")
 
     if result.__len__() == 0:
-        sql = "INSERT INTO new_house_price \
+        sql = "INSERT INTO bj_new_house_price \
                     (house_key, name, district_name, block_name, address, price, location) \
                  VALUES (\"%s\", \"%s\", \"%s\", \"%s\", \"%s\", %d, \"%s\")" % \
               (house['house_key'], house['name'], house['district_name'], house['block_name'], house['address'], house['price'], house['location'])
@@ -184,7 +184,7 @@ def main():
                         for house in get_house_list_of_block(block):
                             if house:
                                 print(house)
-                                # store_house_price_data_in_db(house)
+                                store_house_price_data_in_db(house)
             else:
                 print("This distric is empty!")
     finally:
